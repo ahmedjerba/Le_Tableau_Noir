@@ -1,118 +1,83 @@
-import json 
-from typing import Dict, Any, List
+# src/nodes/mercato_agent.py
+
+from typing import Dict, Any
 from langchain_core.messages import SystemMessage, HumanMessage
 from src.state import DigestState
-from src.tools.web_search import web_search
-from src.tools.agent_context_shared import resolve_primary_team, build_football_query, create_groq_llm
+from src.tools.agent_context_shared import create_groq_llm
+from src.tools.web_search import web_search  # Aligne sur le nom exact de ton outil
+import json
 
 class MercatoAgentNode:
     def __init__(self):
-        self.llm = create_groq_llm(temperature=0.2)
-        
-    def __call__(self, state: DigestState) -> Dict[str, Any]:
-        print("[MercatoAgent] Analyse du marché des transferts en cours...")
-        
-        club_phare = resolve_primary_team(state)
-        planned_sections = state.get("planned_sections", [])
-        team_target = None
-        for section in planned_sections:
-            if section.get("agent_type") == "mercato_agent":
-                team_target = section.get("target")
-                break
-        if not team_target:
-            preferences = state.get("user_preferences", {})
-            teams = preferences.get("teams", [])
-            team_target = teams[0] if teams else club_phare
-            time_window = state.get("time_window", "les derniers jours")
-        
-        # 📋 LISTE DES SITES EXPERTS DU BIG FIVE POUR LE MERCATO
-        sites_mercato = [
-            "footmercato.net",       # France (Réactivité)
-            "maxifoot.fr",          # France (Revue de presse)
-            "skysports.com",        # Angleterre (Breaking news)
-            "theathletic.com",      # Angleterre / Monde (Fiabilité chirurgicale)
-            "marca.com",            # Espagne (Proche Real Madrid)
-            "as.com",               # Espagne (Actu Liga)
-            "bild.de",              # Allemagne (Proche Bayern / Bundesliga)
-            "gazzetta.it"           # Italie (Le boss de la Serie A)
-        ]
+        # Température un poil plus haute pour capter le ton "insider / rumeurs" du mercato
+        self.model = create_groq_llm(temperature=0.6)
 
-        print("[MercatoAgent] Recherche des tendances et gros coups mondiaux sur les sites experts...")
-        query_global = build_football_query("transferts", "officiels")
-        # Injection de la liste de sites ici ⬇️
-        raw_global_data = web_search.invoke({
-            "query": query_global, 
-            "target_sites": sites_mercato, 
-            "max_results": 5
-        })
+    def __call__(self, state: DigestState) -> Dict[str, Any]:
+        print("[MercatoAgent] Analyse fine du marché des transferts et rumeurs globales...")
+
+        # 1. Requête 100% orientée sur les blockbusters mondiaux du moment
+        query_recherche = "football mercato rumeurs transferts officiels juin 2026"
         
-        print(f"[MercatoAgent] Recherche de rumeurs spécifiques à {team_target} sur les sites experts...")
-        query_team = build_football_query("mercato", team_target or club_phare)
-        # Injection de la liste de sites ici ⬇️
-        raw_team_data = web_search.invoke({
-            "query": query_team, 
-            "target_sites": sites_mercato, 
-            "max_results": 5
-        })
-        
+        try:
+            search_results = web_search.invoke({"query": query_recherche,"max_results": 5})
+        except Exception as e:
+            print(f"[MercatoAgent] Erreur recherche web: {e}")
+            search_results = "Aucun résultat mercato récent sur le web."
+
+        # 2. Prompt exigeant un angle global et interdisant le focus Real Madrid
         system_prompt = (
-            "Règle de recherche: génère STRICTEMENT des requêtes de 2 à 4 mots maximum, uniquement en FRANÇAIS."
-            " Le premier mot doit être 'football' ou 'foot'. Interdis les guillemets imbriqués, les mots temporels inutiles"
-            " comme 'cette semaine', 'actuel', 'récent', et tout mélange anglais/français.\n\n"
-            "Tu es le spécialiste des transferts (le 'Fabrizio Romano') du magazine 'Le Tableau Noir'.\n"
-            "Analyse les données du web fournies pour construire la rubrique mercato.\n\n"
-            "Tu dois impérativement extraire :\n"
-            "1. 4 informations générales majeures sur le mercato mondial.\n"
-            "2. 2 informations spécifiques et rumeurs concernant le club phare si elles existent.\n\n"
-            "Pour CHAQUE information ou rumeur, tu dois évaluer sa fiabilité et attribuer un pourcentage :\n"
-            "- Si le transfert est officiel, signé ou annoncé par le club : mets STRICTEMENT 100%.\n"
-            "- Si c'est une rumeur en cours de négociation : estime la probabilité entre 10% et 95% selon la solidité des sources.\n\n"
-            "Tu dois obligatoirement répondre sous ce format JSON strict :\n"
-            "{\n"
-            "  \"mercato_global\": [\n"
-            "     {\"joueur\": \"Nom\", \"details\": \"Résumé de l'info\", \"provenance_destination\": \"Club A -> Club B\", \"pourcentage_fiabilite\": \"100% (Officialisé)\"}\n"
-            "  ],\n"
-            "  \"mercato_equipe\": [\n"
-            "     {\"joueur\": \"Nom\", \"details\": \"Résumé de la rumeur\", \"pourcentage_fiabilite\": \"75% (En négociations)\", \"image_url\": \"URL d'image pertinente\"}\n"
-            "  ]\n"
-            "}"
+            "Tu es le spécialiste Business et Transferts. Analyse les données textuelles fournies. Interdiction d'inventer des rumeurs si le contexte est vide."
+
+"Si le marché des transferts est fermé ou calme, oriente ta chronique sur l'économie du football : analyse la santé financière d'un grand championnat, l'impact des droits TV, ou le fonctionnement du marché des agents de joueurs."
+            
+            "⚠️ DIRECTIVE DE SÉCURITÉ FORMAT JSON :\n"
+            "Tu dois impérativement répondre sous la forme d'un objet JSON strict contenant exactement ces deux clés :\n"
+            "1. 'data_brute': Un dictionnaire contenant les noms des joueurs et clubs au cœur des rumeurs.\n"
+            "2. 'texte_redige': Ta chronique complète rédigée en Markdown (sans afficher le titre global H1).\n"
+            "ATTENTION : Échappe obligatoirement chaque saut de ligne avec '\\n' pour éviter de briser la structure du JSON.\n\n"
+            
+            "⚠️ CAS DE TRÊVE CALME (FALLBACK) :\n"
+            "Si les news du jour sont minces, analyse les grandes tendances financières de ce début de mercato 2026 "
+            "(ex: l'impact du fair-play financier sur les cadors européens ou les profils les plus recherchés cet été)."
+            "⚠️ ATTENTION IMPÉRATIVE SUR LA DATE :\n"
+"Nous sommes en JUIN 2026. Tu as interdiction absolue de parler de Neymar au PSG/Barça, de Aubameyang ou de Paul Pogba à Manchester United. "
+"Ce sont des informations obsolètes de 2022. Base-toi UNIQUEMENT sur les cracks actuels de 2026 (ex: le marché des jeunes talents, les fins de contrat de juin 2026, l'Arabie Saoudite ou la Premier League)."
         )
-        
+
         user_content = f"""
-        Club phare : {club_phare}
-        Équipe cible : {team_target or club_phare}
-        Période analysée : "Récente"
+        Données fraîches du web concernant le marché des transferts :
+        {search_results}
         
-        [DONNÉES WEB MERCATO GLOBAL] :
-        {raw_global_data}
-        
-        [DONNÉES WEB MERCATO SPECIFIQUE {str(team_target).upper() if team_target else str(club_phare).upper()}] :
-        {raw_team_data}
+        Période : {state.get('time_window', 'cette semaine')} (Juin 2026)
         """
 
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_content)
-        ]
-        
-        info_mercato_liste = []
         try:
-            # Appel au LLM en forçant le format JSON d'évitement de crash
-            response = self.llm.invoke(messages, response_format={"type": "json_object"})
-            parsed_mercato = json.loads(response.content)
-            
-            # On glisse l'objet complet structuré dans la liste pour le State
-            info_mercato_liste.append(parsed_mercato)
+            response = self.model.invoke(
+                [SystemMessage(content=system_prompt), HumanMessage(content=user_content)],
+                response_format={"type": "json_object"}
+            )
+            result_json = json.loads(response.content)
             
         except Exception as e:
-            print(f"[MercatoAgent Error] Échec du parsing de la revue des transferts : {e}")
-            # Fallback basique pour ne pas bloquer le graphe
-            info_mercato_liste.append({
-                "mercato_global": [],
-                "mercato_equipe": [{"joueur": "Archivage", "details": "Le moteur de veille continue d'analyser les signaux du mercato pour le club phare.", "pourcentage_fiabilite": "0%"}]
-            })
+            print(f"[MercatoAgent Error] Échec de la génération ou du parsing JSON : {e}")
+            # Repli propre et structuré en cas de raté
+            result_json = {
+                "data_brute": {"status": "fallback_mercato_global"},
+                "texte_redige": (
+                    "## JOURNAL DES TRANSFERTS : LES GRANDES MANŒUVRES ESTIVALES\\n\\n"
+                    "Le marché européen entre dans sa phase d'ébullition en ce début de mois de juin 2026. "
+                    "Avec l'ouverture officielle des fenêtres d'enregistrement, les directeurs sportifs des quatre coins du continent "
+                    "activent leurs réseaux pour sécuriser les signatures prioritaires avant la reprise des entraînements."
+                )
+            }
 
-        # 3. Envoi des données collectées dans le State
+        # 3. Retour aligné sur le canal d'accumulation du State
         return {
-            "info_mercato": info_mercato_liste
+            "info_mercato": [
+                {
+                    "metadata": {"source": "Radar Mercato Global", "date": "Juin 2026"},
+                    "data_brute": result_json.get("data_brute", {}),
+                    "texte_redige": result_json.get("texte_redige", "")
+                }
+            ]
         }

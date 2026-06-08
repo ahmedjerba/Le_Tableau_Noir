@@ -5,7 +5,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # 🎯 CALCUL DU CHEMIN ABSOLU VERS LE DOSSIER DU SCRIPT
-# __file__ est le chemin de main.py. .resolve().parent donne son dossier racine.
 BASE_DIR = Path(__file__).resolve().parent
 env_path = BASE_DIR / ".env"
 
@@ -24,7 +23,7 @@ if __name__ == "__main__":
 
     ensure_groq_api_key()
 
-    # Définition des préférences de ton abonné de test
+    # Définition des préférences de ton abonné de test conformes à ton DigestState
     initial_state = {
         "user_preferences": {
             "teams": ["Real Madrid"],
@@ -34,29 +33,33 @@ if __name__ == "__main__":
         "time_window": "cette semaine",
         "sections_to_write": [],
         
-        # 🚨 COMPTEUR DE RETRIES INITIALISÉ POUR LE VALIDATEUR ANTI-BOUCLE
-        "retry_count": 0,
+        # Contexte injecté ou mis à jour par les briques de ton infrastructure
+        "contexte_global": {},
+        "contexte_equipe": {},
         
-        # Initialisation obligatoire des canaux d'accumulation (operator.add)
+        # Initialisation des canaux d'accumulation (operator.add) - Strictement calée sur ton State
         "info_general": [],
         "info_stats": [],
-        "info_funny": [],
         "info_mercato": [],
-        "info_scoop_sur_equipe": [],
-        "info_scoop_sur_joueur": [],
         "info_histoire": [],
+        "info_funny": [],            
+        "info_club_specialiste": [],  # Ta clé unique pour l'agent infiltré (fusion équipe/joueur)
         
-        # Planification initiale
+        # Planification & Routage
         "planned_sections": [],
         "retry_agents": [],
-        "validation_status": "PENDING"
+        "validation_status": "PENDING",
+        
+        # Données de sortie
+        "final_markdown": "",
+        "status": "collecting"
     }
 
     print("🏁 Lancement de la génération du magazine 'Le Tableau Noir'...")
-    print("🤖 Orchestration de l'équipe d'agents en parallèle (Groq + Llama 3.3)...")
+    print("🤖 Orchestration de la rédaction en parallèle (6 agents experts)...")
     
     try:
-        # Exécution du graphe LangGraph
+        # Exécution du graphe LangGraph compilé
         final_output = app.invoke(initial_state)
         
         markdown_result = final_output.get("final_markdown", "")
@@ -78,7 +81,7 @@ if __name__ == "__main__":
             print(f"💾 Le magazine a été sauvegardé avec succès dans : {file_path}")
             print("💡 Conseil : Ouvre-le dans VS Code ou un aperçu Markdown pour apprécier la mise en page.\n")
             
-            # Petit aperçu rapide dans ton terminal pour valider visuellement
+            # Aperçu des 15 premières lignes dans la console
             print("--- APERÇU DES PREMIÈRES LIGNES ---")
             print("\n".join(markdown_result.split("\n")[:15]))
             print("\n... (Le reste de la revue est disponible dans le fichier généré) ...")
@@ -86,4 +89,4 @@ if __name__ == "__main__":
             print("⚠️ Le WriterAgent a fini son exécution mais le livrable est vide ou en échec.")
             
     except Exception as e:
-        print(f"\n❌ Erreur critique lors de l'exécution du pipeline LangGraph : {e}")
+        print

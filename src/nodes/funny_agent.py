@@ -2,67 +2,49 @@ import json
 from typing import Dict, Any, List
 from langchain_core.messages import SystemMessage, HumanMessage
 from src.state import DigestState
-from src.tools.web_search import web_search
-from src.tools.agent_context_shared import resolve_primary_team, build_football_query, create_groq_llm
+from src.tools.agent_context_shared import resolve_primary_team, create_groq_llm
 
 class FunnyAgentNode:
     def __init__(self):
-        # Température un peu plus haute pour laisser de la liberté et de l'humour au LLM
+        # Température un peu plus haute conservée pour garder la créativité et le piquant
         self.llm = create_groq_llm(temperature=0.6)
         
     def __call__(self, state: DigestState) -> Dict[str, Any]:
-        print("[FunnyAgent] Recherche de la dose d'insolence et de dérision...")
+        print("[FunnyAgent] Génération de la dose d'insolence et de dérision...")
         
+        # Récupération de l'équipe pour pouvoir glisser un petit tacle contextuel
         club_phare = resolve_primary_team(state)
         
-        # 📋 LES SPÉCIALISTES DU SOURIRE ET DU TROLL FOOTBALLISTIQUE
-        sites_humour = [
-            "sofoot.com",               # Le ton décalé par excellence
-            "cahiersdufootball.net",    # L'ironie fine et la critique des dérives
-            "winamax.fr/sport",         # L'humour incisif, vannes sur les flops
-            "legorafi.fr"               # Pour capter l'esprit parodique si sujet foot
-        ]
-
-        print("[FunnyAgent] Capture des mèmes et des moments insolites du football européen...")
-        query_global = build_football_query("foot insolite", "humour declaration")
-        raw_global_data = web_search.invoke({
-            "query": query_global, 
-            "target_sites": sites_humour, 
-            "max_results": 5
-        })
-        
-        print(f"[FunnyAgent] Recherche de vannes ou situations cocasses sur {club_phare}...")
-        query_team = build_football_query("so foot", club_phare)
-        raw_team_data = web_search.invoke({
-            "query": query_team, 
-            "target_sites": sites_humour, 
-            "max_results": 4
-        })
+        # PEAUFINAGE : On utilise directement la matière extraite par le GlobalContextAgent
+        contexte_global = state.get("contexte_global", {})
+        faits_semaine = ", ".join(contexte_global.get("faits_majeurs", []))
+        scores_semaine = ", ".join(contexte_global.get("scores_marquants", []))
         
         system_prompt = (
-            "Tu es le rédacteur satirique (l'esprit 'So Foot / Winamax Sport') du magazine 'Le Tableau Noir'.\n"
-            "Ton rôle est d'apporter de l'ironie, du second degré, de pointer du doigt les déclarations absurdes, "
-            "les simulations ridicules ou les actions insolites de la semaine.\n\n"
-            "Analyse les données fournies et renvoie STRICTEMENT ce format JSON :\n"
+            "Tu es le rédacteur satirique et sniper officiel du magazine 'Le Tableau Noir'. Ton style mélange l'insolence "
+            "de 'So Foot' et le cynisme de 'Winamax Sport'.\n"
+            "Ton rôle est d'apporter de l'ironie, du second degré, de pointer du doigt les absurdités, les déclarations chaotiques "
+            "ou les flops de l'actualité récente du football mondial.\n\n"
+            "Consignes de rédaction :\n"
+            "1. Base-toi sur les faits réels et les scores fournis pour l'actualité de la semaine.\n"
+            "2. Rédige un bloc d'humour incisif : quelques perles bien acérées sous forme de punchlines, suivies d'un petit troll ou d'une vame amicale "
+            f"sur la situation ou l'attente autour du club '{club_phare}'.\n\n"
+            "Tu dois obligatoirement répondre sous ce format JSON strict :\n"
             "{\n"
-            "  \"les_perles_europe\": [\n"
-            "     {\"cible\": \"Joueur/Club\", \"vanne_ou_fait\": \"La punchline ou la situation ridicule racontée de manière caustique\"}\n"
-            "  ],\n"
-            "  \"le_troll_du_club\": {\n"
-            "     \"sujet\": \"Le point d'ancrage de la moquerie sur le club phare\",\n"
-            "     \"blague\": \"Une remarque ironique bien sentie sur leur forme ou un fait de match récent.\"\n"
-            "  }\n"
+            "  \"data_brute\": {\n"
+            "     \"sujet_trollé\": \"Le principal fait ou acteur visé cette semaine\",\n"
+            "     \"degré_de_sel\": \"Un adjectif ironique (ex: Élevé, Extra-Dry, Mer Noire)\"\n"
+            "  },\n"
+            "  \"texte_redige\": \"Ton article satirique complet formaté en Markdown (titre, punchlines avec des puces, ton caustique)...\"\n"
             "}"
         )
         
         user_content = f"""
-        Club phare : {club_phare}
+        Club favori de l'utilisateur : {club_phare}
         
-        [DONNÉES INSOLITES EUROPE] :
-        {raw_global_data}
-        
-        [DONNÉES MOQUERIES/CONTEXTE {str(club_phare).upper()}] :
-        {raw_team_data}
+        [ACTUALITÉ DU FOOTBALL MONDIAL CETTE SEMAINE] :
+        - Faits marquants : {faits_semaine or "Aucun fait majeur signalé."}
+        - Scores et chocs : {scores_semaine or "Pas de gros scores enregistrés."}
         """
 
         messages = [
@@ -70,15 +52,28 @@ class FunnyAgentNode:
             HumanMessage(content=user_content)
         ]
         
-        info_funny = []
+        info_funny_liste = []
         try:
+            # Mode JSON strict activé sur Groq
             response = self.llm.invoke(messages, response_format={"type": "json_object"})
-            info_funny.append(json.loads(response.content))
+            parsed_funny = json.loads(response.content)
+            
+            # Injection des métadonnées pour harmoniser le State
+            article_formate = {
+                "metadata": {"source": "Satire / Zapping"},
+                "data_brute": parsed_funny.get("data_brute", {}),
+                # On s'assure d'encapsuler la rubrique proprement
+                "texte_redige": f"### LE ZAP DU FOOT : L'insolence de la semaine\n\n{parsed_funny.get('texte_redige', '')}"
+            }
+            info_funny_liste.append(article_formate)
+            
         except Exception as e:
-            print(f"[FunnyAgent Error] Échec du parsing : {e}")
-            info_funny.append({
-                "les_perles_europe": [],
-                "le_troll_du_club": {"sujet": "Calme plat", "blague": "Pas de drama cette semaine, le service de sécurité a bien fermé les portes."}
+            print(f"[FunnyAgent Error] Échec du parsing ou de la génération : {e}")
+            info_funny_liste.append({
+                "metadata": {"source": "Fallback"},
+                "data_brute": {"sujet_trollé": "Néant", "degré_de_sel": "Neutre"},
+                "texte_redige": "### LE ZAP DU FOOT : RAS\n\nLes joueurs ont été étonnamment professionnels cette semaine. Aucun tacle assassin sur les réseaux sociaux, aucun changement de coupe de cheveux suspect. On s'ennuie."
             })
 
-        return {"info_funny": info_funny}
+        # Retourne la clé exacte attendue par notre nouveau state.py
+        return {"info_funny": info_funny_liste}

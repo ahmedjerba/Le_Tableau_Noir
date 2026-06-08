@@ -1,4 +1,8 @@
+from time import time
 from typing import Any, Dict
+import random
+import time
+
 
 from langchain_groq import ChatGroq
 
@@ -75,4 +79,10 @@ def build_football_query(*parts: Any, max_words: int = 4) -> str:
 
 def create_groq_llm(temperature: float, model: str = "llama-3.1-8b-instant") -> ChatGroq:
     ensure_groq_api_key()
+    delai_securite = random.uniform(0.5, 2.5)
+    
+    print(f"[Groq Factory] Micro-pause de sécurité de {delai_securite:.2f}s pour le modèle {model}...")
+    time.sleep(delai_securite)
+    
+    # 3. Instanciation et retour du modèle
     return ChatGroq(model=model, temperature=temperature)
